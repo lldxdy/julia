@@ -70,6 +70,7 @@ JL_DLLEXPORT void jl_init_options(void)
                         NULL, // cookie
                         JL_OPTIONS_HANDLE_SIGNALS_ON,
                         JL_OPTIONS_USE_SYSIMAGE_NATIVE_CODE_YES,
+                        JL_OPTIONS_USE_PKGIMAGE_NATIVE_CODE_YES,
                         JL_OPTIONS_USE_COMPILED_MODULES_YES,
                         NULL, // bind-to
                         NULL, // output-bc
@@ -238,6 +239,7 @@ JL_DLLEXPORT void jl_parse_opts(int *argcp, char ***argvp)
            opt_help_hidden,
            opt_banner,
            opt_sysimage_native_code,
+           opt_pkgimage_native_code,
            opt_compiled_modules,
            opt_machine_file,
            opt_project,
@@ -265,6 +267,7 @@ JL_DLLEXPORT void jl_parse_opts(int *argcp, char ***argvp)
         { "bug-report",      required_argument, 0, opt_bug_report },
         { "sysimage",        required_argument, 0, 'J' },
         { "sysimage-native-code", required_argument, 0, opt_sysimage_native_code },
+        { "pkgimage-native-code", required_argument, 0, opt_pkgimage_native_code },
         { "compiled-modules",required_argument, 0, opt_compiled_modules },
         { "cpu-target",      required_argument, 0, 'C' },
         { "procs",           required_argument, 0, 'p' },
@@ -433,6 +436,14 @@ restart_switch:
                 jl_options.use_sysimage_native_code = JL_OPTIONS_USE_SYSIMAGE_NATIVE_CODE_NO;
             else
                 jl_errorf("julia: invalid argument to --sysimage-native-code={yes|no} (%s)", optarg);
+            break;
+        case opt_pkgimage_native_code:
+            if (!strcmp(optarg,"yes"))
+                jl_options.use_pkgimage_native_code = JL_OPTIONS_USE_PKGIMAGE_NATIVE_CODE_YES;
+            else if (!strcmp(optarg,"no"))
+                jl_options.use_pkgimage_native_code = JL_OPTIONS_USE_PKGIMAGE_NATIVE_CODE_NO;
+            else
+                jl_errorf("julia: invalid argument to --pkgimage-native-code={yes|no} (%s)", optarg);
             break;
         case opt_compiled_modules:
             if (!strcmp(optarg,"yes"))
