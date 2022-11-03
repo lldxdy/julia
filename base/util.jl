@@ -221,6 +221,7 @@ function julia_cmd(julia=joinpath(Sys.BINDIR, julia_exename()))
         push!(addflags, "--sysimage-native-code=no")
     end
     if opts.use_pkgimage_native_code == 0
+        @assert opts.malloc_log == 0 && opts.code_coverage == 0
         push!(addflags, "--pkgimage-native-code=no")
     end
     return `$julia -C$cpu_target -J$image_file $addflags`
