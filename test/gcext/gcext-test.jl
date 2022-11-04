@@ -2,6 +2,7 @@
 
 # tests the output of the embedding example is correct
 using Test
+using Pkg
 
 if Sys.iswindows()
     # libjulia needs to be in the same directory as the embedding executable or in path
@@ -39,4 +40,22 @@ end
         n -> n == 0)
     @test checknum(lines[6], r"([0-9]+) corrupted auxiliary roots",
         n -> n == 0)
+end
+
+@testset "Package with foreign type" begin
+    load_path = joinpath(@__DIR__, "Foreign")
+    push!(LOAD_PATH, load_path)
+    try
+        (@eval (using Foreign))
+        @test Base.invokelatest(Foreign.get_nmark)  == 0
+        @test Base.invokelatest(Foreign.get_nsweep) == 0
+        x = [Base.invokelatest(Foreign.FObj) for _ in 1:10]
+        GC.gc(true)
+        x = nothing
+        GC.gc(true)
+        @test Base.invokelatest(Foreign.get_nmark)  > 0
+        @test Base.invokelatest(Foreign.get_nsweep) > 0
+    finally
+        filter!((≠)(load_path), LOAD_PATH)
+    end
 end

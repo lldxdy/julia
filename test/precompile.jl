@@ -1554,35 +1554,5 @@ precompile_test_harness("issue #46296") do load_path
     (@eval (using CodeInstancePrecompile))
 end
 
-precompile_test_harness("foreign types") do path
-    write(joinpath(load_path, "Foreign.jl"),
-        """
-        module Foreign
-
-        export FObj
-
-        const FObj = ccall(:jl_new_foreign_type, Any, (Symbol, Module, Any, Any, Any, Cint, Cint),
-                        :FObj, Foreign, Any, C_NULL, C_NULL, 0, 0)
-
-        FObj() = ccall(:jl_new_struct_uninit, Any, (Any,), FObj)
-
-        const nmark = Ref(0)
-        const nsweep = Ref(0)
-        inc_nmark() = (nmark[] += 1; return nothing)
-        inc_nsweep() = (nsweep[] += 1; return nothing)
-
-        function __init__()
-            ccall(:jl_reinit_foreign_type, Cint, (Any, Any, Any),
-                FObj, @cfunction(inc_nmark, Cvoid, ()), @cfunction(inc_nsweep, Cvoid, ()))
-        end
-
-        end # module Foreign
-        """)
-    (@eval (using Foreign))
-    x = [FObj() for _ in 1:1000]
-    GC.gc(true)
-    @test_broken Foreign.nmark[] > 0 || Foreign.nsweep[] > 0
-end
-
 empty!(Base.DEPOT_PATH)
 append!(Base.DEPOT_PATH, original_depot_path)
