@@ -428,9 +428,9 @@ for (sym, deps, exp, type) in [
         (:umx, (:mx,), :(uint_map(mx, o)), Unsigned),
         (:urange, (:umn, :umx), :(umx-umn), Unsigned),
         (:bits, (:urange,), :(unsigned(8sizeof(urange) - leading_zeros(urange))), Unsigned),
-        (:buffer, (), nothing, :(Union{Nothing, AbstractVector})), # could have different eltype
-        (:t, (:lo, :hi, :buffer), quote
-            buffer === nothing ? similar(v) : reinterpret(eltype(v), checkbounds(Bool, buffer, lo:hi) ? buffer : resize!(buffer, length(v)))
+        (:scratch, (), nothing, :(Union{Nothing, AbstractVector})), # could have different eltype
+        (:t, (:lo, :hi, :scratch), quote
+            scratch === nothing ? similar(v) : reinterpret(eltype(v), checkbounds(Bool, scratch, lo:hi) ? scratch : resize!(scratch, length(v)))
         end, :(AbstractVector{eltype(v)}))]
     str = string(sym)
     usym = Symbol(:_, sym)
@@ -845,7 +845,7 @@ Each pass divides the input into `2^chunk_size == mask+1` buckets. To do this, i
 """
 struct RadixSort <: Algorithm end
 function _sort!(v::AbstractVector, a::RadixSort, o::DirectOrdering, kw)
-    @getkw lo hi umn buffer lenm1 bits
+    @getkw lo hi umn scratch lenm1 bits
 
     # At this point, we are committed to radix sort.
     u = uint_map!(v, lo, hi, o)
@@ -865,15 +865,15 @@ function _sort!(v::AbstractVector, a::RadixSort, o::DirectOrdering, kw)
 
     len = lenm1 + 1
     U = UIntMappable(eltype(v), o)
-    if buffer !== nothing && checkbounds(Bool, buffer, lo:hi) # Fully preallocated and aligned buffer
-        u2 = radix_sort!(u, lo, hi, bits, reinterpret(U, buffer))
+    if scratch !== nothing && checkbounds(Bool, scratch, lo:hi) # Fully preallocated and aligned scratch
+        u2 = radix_sort!(u, lo, hi, bits, reinterpret(U, scratch))
         uint_unmap!(v, u2, lo, hi, o, umn)
-    elseif buffer !== nothing && (applicable(resize!, buffer, len) || length(buffer) >= len) # Viable buffer
-        length(buffer) >= len || resize!(buffer, len)
-        t1 = axes(buffer, 1) isa OneTo ? buffer : view(buffer, firstindex(buffer):lastindex(buffer))
+    elseif scratch !== nothing && (applicable(resize!, scratch, len) || length(scratch) >= len) # Viable scratch
+        length(scratch) >= len || resize!(scratch, len)
+        t1 = axes(scratch, 1) isa OneTo ? scratch : view(scratch, firstindex(scratch):lastindex(scratch))
         u2 = radix_sort!(view(u, lo:hi), 1, len, bits, reinterpret(U, t1))
         uint_unmap!(view(v, lo:hi), u2, 1, len, o, umn)
-    else # No viable buffer
+    else # No viable scratch
         u2 = radix_sort!(u, lo, hi, bits, similar(u))
         uint_unmap!(v, u2, lo, hi, o, umn)
     end
@@ -1287,8 +1287,8 @@ function sort!(v::AbstractVector{T};
                by=identity,
                rev::Union{Bool,Nothing}=nothing,
                order::Ordering=Forward,
-               buffer::Union{AbstractVector{T}, Nothing}=nothing) where T
-    _sort!(v, getalg(alg), ord(lt,by,rev,order), (;buffer))
+               scratch::Union{AbstractVector{T}, Nothing}=nothing) where T
+    _sort!(v, getalg(alg), ord(lt,by,rev,order), (;scratch))
 end
 
 """
@@ -1404,7 +1404,7 @@ function partialsortperm!(ix::AbstractVector{<:Integer}, v::AbstractVector,
                           order::Ordering=Forward,
                           initialized::Bool=false)
     if axes(ix,1) != axes(v,1)
-        throw(ArgumentError("The index vector is used as a buffer and must have the " *
+        throw(ArgumentError("The index vector is used as a scratch and must have the " *
                             "same length/indices as the source vector, $(axes(ix,1)) != $(axes(v,1))"))
     end
     if !initialized
@@ -1471,7 +1471,7 @@ function sortperm(A::AbstractArray;
                   by=identity,
                   rev::Union{Bool,Nothing}=nothing,
                   order::Ordering=Forward,
-                  buffer::Union{AbstractVector{<:Integer}, Nothing}=nothing,
+                  scratch::Union{AbstractVector{<:Integer}, Nothing}=nothing,
                   dims...) #to optionally specify dims argument
     ordr = ord(lt,by,rev,order)
     if ordr === Forward && isa(A,Vector) && eltype(A)<:Integer
@@ -1486,7 +1486,7 @@ function sortperm(A::AbstractArray;
         end
     end
     ix = copymutable(LinearIndices(A))
-    sort!(ix; alg, order = Perm(ordr, vec(A)), buffer, dims...)
+    sort!(ix; alg, order = Perm(ordr, vec(A)), scratch, dims...)
 end
 
 
@@ -1532,7 +1532,7 @@ function sortperm!(ix::AbstractArray{T}, A::AbstractArray;
                    rev::Union{Bool,Nothing}=nothing,
                    order::Ordering=Forward,
                    initialized::Bool=false,
-                   buffer::Union{AbstractVector{T}, Nothing}=nothing,
+                   scratch::Union{AbstractVector{T}, Nothing}=nothing,
                    dims...) where T <: Integer #to optionally specify dims argument
     (typeof(A) <: AbstractVector) == (:dims in keys(dims)) && throw(ArgumentError("Dims argument incorrect for type $(typeof(A))"))
     axes(ix) == axes(A) || throw(ArgumentError("index array must have the same size/axes as the source array, $(axes(ix)) != $(axes(A))"))
@@ -1540,7 +1540,7 @@ function sortperm!(ix::AbstractArray{T}, A::AbstractArray;
     if !initialized
         ix .= LinearIndices(A)
     end
-    sort!(ix; alg, order = Perm(ord(lt, by, rev, order), vec(A)), buffer, dims...)
+    sort!(ix; alg, order = Perm(ord(lt, by, rev, order), vec(A)), scratch, dims...)
 end
 
 # sortperm for vectors of few unique integers
@@ -1605,7 +1605,7 @@ function sort(A::AbstractArray{T};
               by=identity,
               rev::Union{Bool,Nothing}=nothing,
               order::Ordering=Forward,
-              buffer::Union{AbstractVector{T}, Nothing}=similar(A, size(A, dims))) where T
+              scratch::Union{AbstractVector{T}, Nothing}=similar(A, size(A, dims))) where T
     dim = dims
     order = ord(lt,by,rev,order)
     n = length(axes(A, dim))
@@ -1613,19 +1613,19 @@ function sort(A::AbstractArray{T};
         pdims = (dim, setdiff(1:ndims(A), dim)...)  # put the selected dimension first
         Ap = permutedims(A, pdims)
         Av = vec(Ap)
-        sort_chunks!(Av, n, alg, order, buffer)
+        sort_chunks!(Av, n, alg, order, scratch)
         permutedims(Ap, invperm(pdims))
     else
         Av = A[:]
-        sort_chunks!(Av, n, alg, order, buffer)
+        sort_chunks!(Av, n, alg, order, scratch)
         reshape(Av, axes(A))
     end
 end
 
-@noinline function sort_chunks!(Av, n, alg, order, buffer)
+@noinline function sort_chunks!(Av, n, alg, order, scratch)
     inds = LinearIndices(Av)
     for lo = first(inds):n:last(inds)
-        _sort!(Av, getalg(alg), order, (; lo, hi=lo+n-1, buffer))
+        _sort!(Av, getalg(alg), order, (; lo, hi=lo+n-1, scratch))
     end
     Av
 end
@@ -1667,13 +1667,13 @@ function sort!(A::AbstractArray{T};
                by=identity,
                rev::Union{Bool,Nothing}=nothing,
                order::Ordering=Forward,
-               buffer::Union{AbstractVector{T}, Nothing}=similar(A, size(A, dims))) where T
-    __sort!(A, Val(dims), getalg(alg), ord(lt, by, rev, order), buffer)
+               scratch::Union{AbstractVector{T}, Nothing}=similar(A, size(A, dims))) where T
+    __sort!(A, Val(dims), getalg(alg), ord(lt, by, rev, order), scratch)
 end
 function __sort!(A::AbstractArray{T}, ::Val{K},
                 alg::Union{Algorithm, Type{<:Algorithm}},
                 order::Ordering,
-                buffer::Union{AbstractVector{T}, Nothing}) where {K,T}
+                scratch::Union{AbstractVector{T}, Nothing}) where {K,T}
     nd = ndims(A)
 
     1 <= K <= nd || throw(ArgumentError("dimension out of range"))
@@ -1681,7 +1681,7 @@ function __sort!(A::AbstractArray{T}, ::Val{K},
     remdims = ntuple(i -> i == K ? 1 : axes(A, i), nd)
     for idx in CartesianIndices(remdims)
         Av = view(A, ntuple(i -> i == K ? Colon() : idx[i], nd)...)
-        sort!(Av; alg, order, buffer)
+        sort!(Av; alg, order, scratch)
     end
     A
 end
@@ -1797,18 +1797,18 @@ end
 MergeSort() = MergeSort(SMALL_ALGORITHM)
 
 function _sort!(v::AbstractVector, a::MergeSort, o::Ordering, kw)
-    @getkw lo hi buffer
+    @getkw lo hi scratch
     @inbounds if lo < hi
         hi-lo <= SMALL_THRESHOLD && return _sort!(v, a.next, o, kw)
 
         m = midpoint(lo, hi)
 
-        t = buffer === nothing ? similar(v, m-lo+1) : buffer
+        t = scratch === nothing ? similar(v, m-lo+1) : scratch
         length(t) < m-lo+1 && resize!(t, m-lo+1)
         Base.require_one_based_indexing(t)
 
-        _sort!(v, a, o, (;kw..., hi=m, buffer=t))
-        _sort!(v, a, o, (;kw..., lo=m+1, buffer=t))
+        _sort!(v, a, o, (;kw..., hi=m, scratch=t))
+        _sort!(v, a, o, (;kw..., lo=m+1, scratch=t))
 
         i, j = 1, lo
         while j <= m
